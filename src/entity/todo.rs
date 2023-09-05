@@ -15,15 +15,14 @@ pub struct Model {
     pub completed: bool,
 }
 
-#[derive(Copy, Clone, Debug)]
-#[cfg_attr(feature = "ssr", derive(sea_orm::EnumIter, sea_orm::DeriveRelation))]
-pub enum Relation {}
-
 use cfg_if::cfg_if;
 
 cfg_if! {
     if #[cfg(feature = "ssr")] {
         use sea_orm::entity::prelude::*;
+
+        #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+        pub enum Relation {}
 
         impl ActiveModelBehavior for ActiveModel {}
     }

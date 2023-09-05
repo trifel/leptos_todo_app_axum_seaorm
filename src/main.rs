@@ -5,8 +5,8 @@ cfg_if! {
     use leptos::*;
     use axum::{
         routing::{post, get},
-        extract::{State, Path},
-        http::Request,
+        extract::{State, Path, RawQuery, FromRef},
+        http::{Request, HeaderMap},
         response::{IntoResponse, Response},
         Router,
     };
@@ -14,26 +14,39 @@ cfg_if! {
     use crate::todo::*;
     use leptos_todo_app_axum_seaorm::*;
     use crate::fallback::file_and_error_handler;
-    use leptos_axum::{generate_route_list, LeptosRoutes};
+    use leptos_axum::{generate_route_list, LeptosRoutes, handle_server_fns_with_context};
     use migration::{Migrator, MigratorTrait};
+    use sea_orm::{Database, DatabaseConnection};
 
-    //Define a handler to test extractor with state
-    async fn custom_handler(Path(id): Path<String>, State(options): State<LeptosOptions>, req: Request<AxumBody>) -> Response{
-            let handler = leptos_axum::render_app_to_stream_with_context(options,
+    #[derive(FromRef, Debug, Clone)]
+    pub struct AppState{
+        pub leptos_options: LeptosOptions,
+        pub db: DatabaseConnection,
+    }
+
+    async fn server_fn_handler(State(app_state): State<AppState>, path: Path<String>, headers: HeaderMap, raw_query: RawQuery,
+    request: Request<AxumBody>) -> impl IntoResponse {
+        handle_server_fns_with_context(path, headers, raw_query, move || {
+            provide_context(app_state.db.clone());
+        }, request).await
+    }
+
+    async fn leptos_routes_handler(State(app_state): State<AppState>, req: Request<AxumBody>) -> Response{
+            let handler = leptos_axum::render_app_to_stream_with_context(app_state.leptos_options.clone(),
             move || {
-                provide_context(id.clone());
+                provide_context(app_state.db.clone());
             },
             || view! { <TodoApp/> }
         );
-            handler(req).await.into_response()
+        handler(req).await.into_response()
     }
 
     #[tokio::main]
     async fn main() {
         simple_logger::init_with_level(log::Level::Error).expect("couldn't initialize logging");
 
-        let conn = db().await.expect("couldn't connect to DB");
-        Migrator::up(&conn, None).await.expect("couldn't run database migrations");
+        let db = Database::connect("sqlite:Todos.db?mode=rwc").await.expect("couldn't connect to DB");
+        Migrator::up(&db, None).await.expect("couldn't run database migrations");
 
         // Setting this to None means we'll be using cargo-leptos and its env vars
         let conf = get_configuration(None).await.unwrap();
@@ -41,13 +54,17 @@ cfg_if! {
         let addr = leptos_options.site_addr;
         let routes = generate_route_list(|| view! { <TodoApp/> }).await;
 
+        let app_state = AppState{
+            leptos_options,
+            db: db.clone(),
+        };
+
         // build our application with a route
         let app = Router::new()
-        .route("/api/*fn_name", post(leptos_axum::handle_server_fns))
-        .route("/special/:id", get(custom_handler))
-        .leptos_routes(&leptos_options, routes, || view! { <TodoApp/> } )
+        .route("/api/*fn_name", post(server_fn_handler))
+        .leptos_routes_with_handler(routes, get(leptos_routes_handler) )
         .fallback(file_and_error_handler)
-        .with_state(leptos_options);
+        .with_state(app_state);
 
         // run our app with hyper
         // `axum::Server` is a re-export of `hyper::Server`
@@ -56,8 +73,8 @@ cfg_if! {
             .serve(app.into_make_service())
             .await
             .unwrap();
+        }
     }
-}
 
     // client-only stuff for Trunk
     else {

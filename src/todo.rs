@@ -11,11 +11,11 @@ cfg_if! {
         };
         use sea_orm::entity::prelude::*;
         use sea_orm::*;
-        use sea_orm::{Database, DatabaseConnection};
-        // use http::{header::SET_COOKIE, HeaderMap, HeaderValue, StatusCode};
+        use sea_orm::{DatabaseConnection};
 
         pub async fn db() -> Result<DatabaseConnection, ServerFnError> {
-            Ok(Database::connect("sqlite:Todos.db?mode=rwc").await?)
+            use_context::<DatabaseConnection>()
+            .ok_or_else(|| ServerFnError::ServerError("Database connection missing.".into()))
         }
     }
 }
@@ -33,21 +33,6 @@ pub async fn get_todos() -> Result<Vec<todo::Model>, ServerFnError> {
     let conn = db().await?;
 
     let todos = Todo::find().all(&conn).await?;
-
-    // Add a random header(because why not)
-    // let mut res_headers = HeaderMap::new();
-    // res_headers.insert(SET_COOKIE, HeaderValue::from_str("fizz=buzz").unwrap());
-
-    // let res_parts = leptos_axum::ResponseParts {
-    //     headers: res_headers,
-    //     status: Some(StatusCode::IM_A_TEAPOT),
-    // };
-
-    // let res_options_outer = use_context::<leptos_axum::ResponseOptions>();
-    // if let Some(res_options) = res_options_outer {
-    //     res_options.overwrite(res_parts).await;
-    // }
-
     Ok(todos)
 }
 
@@ -67,7 +52,7 @@ pub async fn add_todo(title: String) -> Result<(), ServerFnError> {
     .await;
 
     match new_todo {
-        Ok(_row) => Ok(()),
+        Ok(_) => Ok(()),
         Err(e) => Err(ServerFnError::ServerError(e.to_string())),
     }
 }
@@ -78,14 +63,13 @@ pub async fn delete_todo(id: u16) -> Result<(), ServerFnError> {
     let conn = db().await?;
 
     match Todo::delete_by_id(id).exec(&conn).await {
-        Ok(_row) => Ok(()),
+        Ok(_) => Ok(()),
         Err(e) => Err(ServerFnError::ServerError(e.to_string())),
     }
 }
 
 #[component]
 pub fn TodoApp() -> impl IntoView {
-    //let id = use_context::<String>();
     provide_meta_context();
     view! {
         <Link rel="shortcut icon" type_="image/ico" href="/favicon.ico"/>
