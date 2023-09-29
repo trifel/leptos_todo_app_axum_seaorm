@@ -52,7 +52,7 @@ cfg_if! {
         let conf = get_configuration(None).await.unwrap();
         let leptos_options = conf.leptos_options;
         let addr = leptos_options.site_addr;
-        let routes = generate_route_list(|| view! { <TodoApp/> }).await;
+        let routes = generate_route_list(|| view! { <TodoApp/> });
 
         let app_state = AppState{
             leptos_options,
@@ -68,7 +68,7 @@ cfg_if! {
 
         // run our app with hyper
         // `axum::Server` is a re-export of `hyper::Server`
-        log!("listening on http://{}", &addr);
+        logging::log!("listening on http://{}", &addr);
         axum::Server::bind(&addr)
             .serve(app.into_make_service())
             .await
